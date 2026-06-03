@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STARMAN - 3D 沉浸式宇宙展厅</title>
+    <style>
+        :root {
+            --glow-color: #00f0ff;
+            --bg-grad-1: #0a0a16;
+            --bg-grad-2: #020205;
+        }
+        body, html {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background: linear-gradient(135deg, var(--bg-grad-1), var(--bg-grad-2));
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: #ffffff;
+        }
+        #canvas-container {
+            width: 100vw; height: 100vh;
+            position: absolute; top: 0; left: 0;
+            z-index: 1;
+        }
+        /* UI 艺术外壳包装 */
+        .ui-container {
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 10; pointer-events: none;
+            display: flex; flex-direction: column;
+            justify-content: space-between;
+            box-sizing: border-box; padding: 40px;
+        }
+        header {
+            display: flex; justify-content: space-between; align-items: flex-start;
+        }
+        .logo-area h1 {
+            margin: 0; font-size: 36px; font-weight: 200;
+            letter-spacing: 8px; background: linear-gradient(45deg, #fff, #888);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+        .logo-area p {
+            margin: 6px 0 0 0; font-size: 11px; letter-spacing: 4px;
+            color: var(--glow-color); text-transform: uppercase; opacity: 0.8;
+        }
+        .badge {
+            pointer-events: auto; background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 10px 20px; border-radius: 20px; font-size: 12px;
+            letter-spacing: 2px; color: #fff; display: flex; align-items: center; gap: 8px;
+        }
+        .badge::before {
+            content: ''; display: inline-block; width: 6px; height: 6px;
+            background-color: var(--glow-color); border-radius: 50%;
+            box-shadow: 0 0 8px var(--glow-color);
+        }
+        /* 右侧展示说明卡片 */
+        .info-card {
+            position: absolute; right: 40px; top: 35%;
+            z-index: 10; pointer-events: auto;
+            width: 280px; background: rgba(5, 5, 10, 0.5);
+            border: 1px solid rgba(0, 240, 255, 0.15);
+            backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+            padding: 25px; border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+        }
+        .info-card h2 { margin: 0 0 10px 0; font-size: 20px; font-weight: 400; letter-spacing: 2px; }
+        .info-card p { margin: 0; font-size: 13px; color: #a0a0ba; line-height: 1.6; text-align: justify; }
+        .info-card .meta-item { margin-top: 15px; font-size: 11px; color: var(--glow-color); letter-spacing: 1px; }
+
+        footer {
+            display: flex; justify-content: space-between; align-items: flex-end;
+            font-size: 11px; color: rgba(255,255,255,0.3); letter-spacing: 1px;
+        }
+        .help-tip {
+            background: rgba(0, 0, 0, 0.4); padding: 8px 16px;
+            border-radius: 30px; border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        /* 优雅的加载幕布 */
+        #loading-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: #050508; z-index: 100;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            transition: opacity 0.8s ease;
+        }
+        .loader-bar {
+            width: 200px; height: 2px; background: rgba(255,255,255,0.05);
+            border-radius: 2px; overflow: hidden; margin-top: 20px;
+        }
+        .loader-progress {
+            width: 0%; height: 100%; background: var(--glow-color);
+            box-shadow: 0 0 10px var(--glow-color); transition: width 0.3s;
+        }
+        #loading-text { font-size: 12px; letter-spacing: 3px; color: #666; margin-top: 15px; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+</head>
+<body>
+
+    <div id="loading-screen">
+        <div class="loader-bar"><div class="loader-progress" id="progress-bar"></div></div>
+        <div id="loading-text">正在解析三维空间数据...</div>
+    </div>
+
+    <div class="ui-container">
+        <header>
+            <div class="logo-area">
+                <h1>星星人</h1>
+                <p>3D DIGITAL ART EXPOSITION</p>
+            </div>
+            <div class="badge">PROD. BY THREE.JS</div>
+        </header>
+
+        <div class="info-card">
+            <h2>概念设计</h2>
+            <p>基于数字雕刻与次世代PBR流程打造的“星星人”数字艺术品。通过极简的流线体态与太空荧光材质，展现科技与幻想的融合。玩家可通过鼠标任意转动、缩放多角度赏析。</p>
+            <div class="meta-item">FORMAT: RE-RENDERED .GLB</div>
+        </div>
+
+        <footer>
+            <div class="help-tip">🖱️ 拖拽左键：360°旋转 | 右键：平移 | 滚轮：焦距缩放</div>
+            <div>© 2026 CYBER ART STUDIO. ALL RIGHTS RESERVED.</div>
+        </footer>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <script>
+        let scene, camera, renderer, controls, composer, model;
+        const container = document.getElementById('canvas-container');
+
+        init();
+        animate();
+
+        function init() {
+            // 1. 初始化暗黑星空展厅场景（加入空间雾化效果）
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x06060a);
+            scene.fog = new THREE.FogExp2(0x06060a, 0.04);
+
+            // 2. 摄像机
+            camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 2, 6);
+
+            // 3. 电影级 WebGL 渲染器设置
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.toneMapping = THREE.ACESFilmicToneMapping; // 开启高级电影色彩映射
+            renderer.toneMappingExposure = 1.3; // 曝光度系数
+            renderer.outputEncoding = THREE.sRGBEncoding;
+            container.appendChild(renderer.domElement);
+
+            // 4. 高级展厅灯光布局 (三点光照法)
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.3); // 微弱环境光
+            scene.add(ambientLight);
+
+            const mainLight = new THREE.DirectionalLight(0x00f0ff, 1.5); // 顶部标志性青色冷光
+            mainLight.position.set(5, 8, 5);
+            scene.add(mainLight);
+
+            const fillLight = new THREE.DirectionalLight(0xff00ff, 0.6); // 侧面辅反光（粉紫色暧昧边缘色）
+            fillLight.position.set(-5, 3, -2);
+            scene.add(fillLight);
+
+            const floorLight = new THREE.DirectionalLight(0xffffff, 0.3); // 底部托底白光
+            floorLight.position.set(0, -5, 2);
+            scene.add(floorLight);
+
+            // 5. 极简科技地面光栅
+            const gridHelper = new THREE.GridHelper(30, 60, 0x00f0ff, 0x11111c);
+            gridHelper.position.y = -1.2;
+            scene.add(gridHelper);
+
+            // 6. 镜头鼠标轨道控制器
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; // 开启物理滑动阻尼（让旋转更丝滑）
+            controls.dampingFactor = 0.04;
+            controls.maxPolarAngle = Math.PI / 2 + 0.1; // 视角锁定，不穿透进入地下
+            controls.minDistance = 2.5; 
+            controls.maxDistance = 12;
+
+            // 7. 辉光核心管理器 (实现科技感光晕效果)
+            const renderPass = new THREE.RenderPass(scene, camera);
+            // 参数调整：分辨率、发光强度、扩散半径、亮度阈值
+            const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 0.35, 0.2);
+            composer = new THREE.EffectComposer(renderer);
+            composer.addPass(renderPass);
+            composer.addPass(bloomPass);
+
+            // 8. 闭眼直连加载 .glb 模型
+            const loader = new THREE.GLTFLoader();
+            
+            // 指向你本地的 xxr.glb 文件
+            loader.load('xxr.glb', function (gltf) {
+                model = gltf.scene;
+
+                // 智能自动居中、触地设置
+                const box = new THREE.Box3().setFromObject(model);
+                const center = box.getCenter(new THREE.Vector3());
+                model.position.set(-center.x, -box.min.y - 1.2, -center.z); // 精确站在发光网格上
+
+                // 强化自发光因子
+                model.traverse((child) => {
+                    if (child.isMesh && child.material) {
+                        // 强制让材质支持双面渲染，防止空洞
+                        child.material.doubleSided = true;
+                        // 如果模型自带自发光贴图，把发光阈值拉高，做出炫酷光晕
+                        if (child.material.emissive) {
+                            child.material.emissiveIntensity = 2.8; 
+                        }
+                    }
+                });
+
+                scene.add(model);
+
+                // 关闭加载幕布
+                const loadScreen = document.getElementById('loading-screen');
+                loadScreen.style.opacity = 0;
+                setTimeout(() => loadScreen.remove(), 800);
+
+            }, function (xhr) {
+                // 计算实时百分比进度条
+                if (xhr.total > 0) {
+                    const percent = (xhr.loaded / xhr.total) * 100;
+                    document.getElementById('progress-bar').style.width = percent + '%';
+                    document.getElementById('loading-text').innerText = `已载入空间物质: ${Math.round(percent)}%`;
+                }
+            }, function (error) {
+                console.error('加载 GLB 异常:', error);
+                document.getElementById('loading-text').innerText = '数据载入失败，请确认文件名是否为 xxr.glb';
+            });
+
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+
+            // 如果无人操作，模型会自动进行非常舒缓的艺术自转展示
+            if (model && !controls.state == -1) {
+                model.rotation.y += 0.0025;
+            }
+
+            // 使用带后处理发光的合成器渲染画面
+            composer.render();
+        }
+    </script>
+</body>
+</html>
